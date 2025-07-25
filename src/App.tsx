@@ -511,6 +511,181 @@ function App() {
   const inProgressIssues = issueArray.filter(issue => issue.status === 'in-progress').length;
   const resolvedIssues = issueArray.filter(issue => issue.status === 'resolved').length;
 
+  // Admin Quick Actions Functions
+  const exportReport = () => {
+    try {
+      const issueArray = Object.entries(issues).map(([key, issue]) => ({
+        id: key,
+        title: issue.title,
+        description: issue.description,
+        category: issue.category,
+        location: issue.location,
+        status: issue.status,
+        reportedBy: issue.reportedBy,
+        reportedAt: issue.reportedAt,
+        updatedAt: issue.updatedAt,
+        resolutionNote: issue.resolutionNote || ''
+      }));
+
+      // Convert to CSV format
+      const headers = ['ID', 'Title', 'Description', 'Category', 'Location', 'Status', 'Reported By', 'Reported At', 'Updated At', 'Resolution Note'];
+      const csvContent = [
+        headers.join(','),
+        ...issueArray.map(issue => [
+          issue.id,
+          `"${issue.title.replace(/"/g, '""')}"`,
+          `"${issue.description.replace(/"/g, '""')}"`,
+          issue.category,
+          `"${issue.location.replace(/"/g, '""')}"`,
+          issue.status,
+          issue.reportedBy,
+          new Date(issue.reportedAt).toLocaleString(),
+          new Date(issue.updatedAt).toLocaleString(),
+          `"${issue.resolutionNote.replace(/"/g, '""')}"`
+        ].join(','))
+      ].join('\n');
+
+      // Create and download file
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `village_issues_report_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      showNotification('Report exported successfully!', 'success');
+    } catch (error) {
+      console.error('Export error:', error);
+      showNotification('Error exporting report', 'error');
+    }
+  };
+
+  const sendBulkUpdates = async () => {
+    try {
+      const pendingIssues = Object.entries(issues).filter(([key, issue]) => issue.status === 'pending');
+      
+      if (pendingIssues.length === 0) {
+        showNotification('No pending issues to send updates for', 'info');
+        return;
+      }
+
+      let successCount = 0;
+      
+      for (const [key, issue] of pendingIssues) {
+        try {
+          const emailParams = {
+            to_email: issue.reportedBy,
+            user_name: issue.reportedBy.split('@')[0],
+            issue_title: issue.title,
+            issue_id: key,
+            update_message: `We are actively working on resolving your reported issue. Our team has been assigned and will provide updates as progress is made. Thank you for your patience.`,
+            update_date: new Date().toLocaleString()
+          };
+
+          await emailjs.send(
+            EMAILJS_CONFIG.SERVICE_ID,
+            'template_ppbuv1y',
+            emailParams,
+            EMAILJS_CONFIG.PUBLIC_KEY
+          );
+          
+          successCount++;
+        } catch (error) {
+          console.error(`Failed to send email for issue ${key}:`, error);
+        }
+      }
+      
+      showNotification(`Bulk updates sent to ${successCount} users successfully!`, 'success');
+    } catch (error) {
+      console.error('Bulk update error:', error);
+      showNotification('Error sending bulk updates', 'error');
+    }
+  };
+
+  const showAnalytics = () => {
+    const issueArray = Object.values(issues);
+    const totalIssues = issueArray.length;
+    
+    if (totalIssues === 0) {
+      showNotification('No data available for analytics', 'info');
+      return;
+    }
+
+    // Calculate analytics
+    const categoryStats = {
+      water: issueArray.filter(issue => issue.category === 'water').length,
+      road: issueArray.filter(issue => issue.category === 'road').length,
+      electricity: issueArray.filter(issue => issue.category === 'electricity').length,
+      garbage: issueArray.filter(issue => issue.category === 'garbage').length,
+      other: issueArray.filter(issue => issue.category === 'other').length
+    };
+
+    const statusStats = {
+      pending: issueArray.filter(issue => issue.status === 'pending').length,
+      'in-progress': issueArray.filter(issue => issue.status === 'in-progress').length,
+      resolved: issueArray.filter(issue => issue.status === 'resolved').length
+    };
+
+    // Calculate resolution rate
+    const resolutionRate = totalIssues > 0 ? ((statusStats.resolved / totalIssues) * 100).toFixed(1) : 0;
+    
+    // Calculate average resolution time for resolved issues
+    const resolvedIssues = issueArray.filter(issue => issue.status === 'resolved');
+    let avgResolutionTime = 'N/A';
+    
+    if (resolvedIssues.length > 0) {
+      const totalResolutionTime = resolvedIssues.reduce((total, issue) => {
+        const reportedDate = new Date(issue.reportedAt);
+        const resolvedDate = new Date(issue.updatedAt);
+        return total + (resolvedDate.getTime() - reportedDate.getTime());
+      }, 0);
+      
+      const avgTimeMs = totalResolutionTime / resolvedIssues.length;
+      const avgDays = Math.round(avgTimeMs / (1000 * 60 * 60 * 24));
+      avgResolutionTime = `${avgDays} days`;
+    }
+
+    // Find most common category
+    const mostCommonCategory = Object.entries(categoryStats).reduce((a, b) => 
+      categoryStats[a[0]] > categoryStats[b[0]] ? a : b
+    )[0];
+
+    const analyticsMessage = `
+📊 VILLAGE ISSUES ANALYTICS REPORT
+
+📈 Overall Statistics:
+• Total Issues: ${totalIssues}
+• Resolution Rate: ${resolutionRate}%
+• Average Resolution Time: ${avgResolutionTime}
+
+📋 Status Breakdown:
+• Pending: ${statusStats.pending} (${((statusStats.pending/totalIssues)*100).toFixed(1)}%)
+• In Progress: ${statusStats['in-progress']} (${((statusStats['in-progress']/totalIssues)*100).toFixed(1)}%)
+• Resolved: ${statusStats.resolved} (${((statusStats.resolved/totalIssues)*100).toFixed(1)}%)
+
+🏷️ Category Breakdown:
+• Water: ${categoryStats.water} issues
+• Road: ${categoryStats.road} issues
+• Electricity: ${categoryStats.electricity} issues
+• Garbage: ${categoryStats.garbage} issues
+• Other: ${categoryStats.other} issues
+
+🎯 Key Insights:
+• Most Common Issue Type: ${mostCommonCategory.charAt(0).toUpperCase() + mostCommonCategory.slice(1)}
+• Total Users Reporting: ${new Set(issueArray.map(issue => issue.reportedBy)).size}
+
+Generated on: ${new Date().toLocaleString()}
+    `.trim();
+
+    // Show analytics in a more user-friendly way
+    alert(analyticsMessage);
+    
+    showNotification('Analytics report generated successfully!', 'success');
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Email Verification Notice */}
@@ -546,7 +721,7 @@ function App() {
               </button>
               <button 
                 onClick={() => handleViewChange('report')}
-                className={`nav-item px-3 py-2 rounded-md text-sm font-medium ${currentView === 'report' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:text-gray-900'} ${userRole === 'admin' ? 'hidden' : ''}`}
+                className={`nav-item px-3 py-2 rounded-md text-sm font-medium ${currentView === 'report' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:text-gray-900'}`}
               >
                 <AlertCircle className="w-4 h-4 inline mr-1" />Report Issue
               </button>
