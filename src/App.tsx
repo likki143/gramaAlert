@@ -546,7 +546,7 @@ function App() {
               </button>
               <button 
                 onClick={() => handleViewChange('report')}
-                className={`nav-item px-3 py-2 rounded-md text-sm font-medium ${currentView === 'report' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:text-gray-900'}`}
+                className={`nav-item px-3 py-2 rounded-md text-sm font-medium ${currentView === 'report' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:text-gray-900'} ${userRole === 'admin' ? 'hidden' : ''}`}
               >
                 <AlertCircle className="w-4 h-4 inline mr-1" />Report Issue
               </button>
